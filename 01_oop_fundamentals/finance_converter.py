@@ -23,7 +23,7 @@ class Finance:
                     original_name = key.replace("_soles", "")
                     usd_val = product[original_name]
                     print(
-                    f"{i}. {original_name:<12} | USD ${usd_val:<6} -> S/. {value}"
+                        f"{i}. {original_name:<12} | USD ${usd_val:<6} -> S/. {value}"
                     )
         print("-" * 45)
         print (self.products)

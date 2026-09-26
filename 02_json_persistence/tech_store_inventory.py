@@ -1,6 +1,5 @@
 import json
 
-
 class TechStoreInventory:
 
     def __init__(self, store):
@@ -44,14 +43,14 @@ class TechStoreInventory:
 
         with open(file_name, "w", encoding="utf-8") as archivo:
             json.dump(report_data, archivo, indent=4, ensure_ascii=False)
-        print(f"✅ File saved correctly as '{file_name}'")
+        print(f"File saved correctly as '{file_name}'")
 
 
 # --- TEST ---
 program = TechStoreInventory("2049 Store")
 program.add_product("CPU", 1100, 15)
 program.add_product("Laptop", 900, 55)
-program.add_product("Monitor 4K", 250, 300)
+program.add_product("Monitor ", 250, 300)
 
 program.inventory_total_value()
 program.save("inventory_report")

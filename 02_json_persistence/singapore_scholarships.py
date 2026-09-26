@@ -44,7 +44,7 @@ class SingaporeScholarships:
 
         with open(file_name, "w", encoding="utf-8") as file:
             json.dump(data_indexion, file, indent=4, ensure_ascii=False)
-        print(f"✅ Successfully exported ranking to '{file_name}'")
+        print(f"Successfully exported ranking to '{file_name}'")
 
 
 # --- TEST ---

@@ -1,6 +1,5 @@
 import json
 
-
 class TaskManager:
 
     def __init__(self, module_name):
@@ -8,7 +7,6 @@ class TaskManager:
         self.tasks = []
 
     def add_task(self, name, priority):
-        # Structured dictionary with fixed keys
         task_item = {"name": name, "priority": priority}
         self.tasks.append(task_item)
 
@@ -17,7 +15,7 @@ class TaskManager:
         self.tasks.sort(key=lambda x: x["priority"], reverse=True)
 
         # 2. Display the sorted tasks
-        print(f"\n📋 TASKS FOR MODULE: {self.module}")
+        print(f"\n TASKS FOR MODULE: {self.module}")
         print("-" * 35)
         for i, task in enumerate(self.tasks, 1):
             print(f"{i}. {task['name']:<20} | Priority: {task['priority']}")
@@ -30,8 +28,7 @@ class TaskManager:
 
         with open(file_name, "w", encoding="utf-8") as file:
             json.dump(self.tasks, file, indent=4, ensure_ascii=False)
-        print(f"✅ Saved correctly as '{file_name}'")
-
+        print(f"Saved correctly as '{file_name}'")
 
 # --- TEST ---
 proj = TaskManager("Software Development")
