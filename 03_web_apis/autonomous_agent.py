@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
+
 def get_github_top_repo(language: str) -> dict:
     """Fetches the #1 top starred GitHub repository for a specified language."""
     url = "https://api.github.com/search/repositories"
@@ -16,6 +17,8 @@ def get_github_top_repo(language: str) -> dict:
         response.raise_for_status()
         data = response.json()
         top_repo = data["items"][0]
+
+        # Sanitize description to prevent null values in Protobuf payload
         desc = top_repo.get("description") or "No description provided"
 
         return {
@@ -24,13 +27,13 @@ def get_github_top_repo(language: str) -> dict:
             "stars": top_repo["stargazers_count"],
             "description": desc
         }
-    
     except Exception as err:
         return {"error": f"Failed to fetch GitHub data: {err}"}
 
+
 class AutonomousAgent:
-    """Orchestrates tool registration, function call interception, and multi-turn state sync."""
-#Phase1
+    """Orchestrates tool registration, function call interception, and multi-turn state sync via a while loop."""
+
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
@@ -38,9 +41,12 @@ class AutonomousAgent:
             "Content-Type": "application/json",
             "X-goog-api-key": self.api_key
         }
-        self.execution_history = []
+        self.execution_history = []  # Local memory buffer for JSON report export
 
     def _get_tool_declarations(self) -> list:
+        """Constructs OpenAPI / Protobuf-compliant JSON Schema sent in payload['tools']."""
+        # Standardized camelCase 'functionDeclarations' for REST API Protobuf parser
+
         return [{
             "functionDeclarations": [{
                 "name": "get_github_top_repo",
@@ -59,91 +65,96 @@ class AutonomousAgent:
         }]
 
     def run(self, user_prompt: str) -> None:
-        payload = {
-            "contents": [{"parts": [{"text": user_prompt}]}],
-            "tools": self._get_tool_declarations()
-        }
+        # 1. Initialize conversational state array
+        history = [
+            {"role": "user", "parts": [{"text": user_prompt}]}
+        ]
+        self.execution_history = [{"prompt": user_prompt}]
 
-        try:
-            response = requests.post(self.url, headers=self.headers, json=payload, timeout=30)
-            response.raise_for_status()
-            data = response.json()
+        print(f"💬 Initial Prompt: '{user_prompt}'\n")
 
-            # Preserve full model content object from Phase 1
-            model_content = data["candidates"][0]["content"]
-            part = model_content["parts"][0]
+        # 2. Dynamic Agent Decision Loop
+        while True:
+            payload = {
+                "contents": history,
+                "tools": self._get_tool_declarations()
+            }
 
-            if "functionCall" in part:
-                func_name = part["functionCall"]["name"]
-                func_args = part["functionCall"]["args"]
+            try:
+                response = requests.post(self.url, headers=self.headers, json=payload, timeout=70)
+                response.raise_for_status()
+                data = response.json()
 
-                if func_name == "get_github_top_repo":
-                    lang = func_args.get("language", "python")
-                    tool_result = get_github_top_repo(lang)
+                # Preserve full model content object returned from API
+                model_content = data["candidates"][0]["content"]
+                part = model_content["parts"][0]
 
-                    # Hand off to Phase 2
-                    self._send_tool_response(user_prompt, model_content, func_name, tool_result)
-            else:
-                print(part["text"].strip())
+                # Append model output turn to conversation history
+                history.append(model_content)
 
-        except requests.exceptions.RequestException as err:
-            print(f"❌ Agent Network Failure: {err}")
+                # 3. Branching Logic: Intercept Function Call vs. Display Final Text
+                if "functionCall" in part:
+                    func_name = part["functionCall"]["name"]
+                    func_args = part["functionCall"]["args"]
 
-#Phase2
-    def _send_tool_response(self, prompt: str, model_content: dict, func_name: str, result: dict) -> None:
-        followup_payload = {
-            "contents": [
-                {"role": "user", "parts": [{"text": prompt}]},
-                model_content,
-                {
-                    "role": "user",
-                    "parts": [{
-                        "functionResponse": {
-                            "name": func_name,
-                            "response": {"output": result}
-                        }
-                    }]
-                }
-            ],
-            "tools": self._get_tool_declarations()
-        }
+                    if func_name == "get_github_top_repo":
+                        lang = func_args.get("language", "python")
+                        print(f"🤖 Agent Decision: Call tool '{func_name}' with language='{lang}'")
+                        
+                        tool_result = get_github_top_repo(lang)
+                        print(f"⚙️ Tool Output Retrieved: {tool_result}\n")
 
-        try:
-            response = requests.post(self.url, headers=self.headers, json=followup_payload, timeout=30)
-            response.raise_for_status()
-            final_data = response.json()
-            final_text = final_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        # Append tool execution turn to conversation history
+                        history.append({
+                            "role": "user",
+                            "parts": [{
+                                "functionResponse": {
+                                    "name": func_name,
+                                    "response": {"output": tool_result}
+                                }
+                            }]
+                        })
 
-            print("\n AGENT EXECUTIVE ASSESSMENT:")
-            print("=" * 65)
-            print(final_text)
-            print("=" * 65)
+                        self.execution_history.append({
+                            "tool_executed": func_name,
+                            "tool_output": tool_result
+                        })
+                        # Loop automatically continues back to the top of 'while True'
+                else:
+                    # Final synthesis reached -> Print assessment and break out of loop
+                    final_text = part["text"].strip()
+                    print("🤖 AGENT EXECUTIVE ASSESSMENT:")
+                    print("=" * 65)
+                    print(final_text)
+                    print("=" * 65)
 
-            self.execution_history = [
-                {"prompt": prompt},
-                {"tool_executed": func_name, "tool_output": result},
-                {"agent_assessment": final_text}
-            ]
+                    self.execution_history.append({"agent_assessment": final_text})
+                    break  # <--- Cleanly terminates the while True loop
 
-        except requests.exceptions.RequestException as err:
-            print(f"❌ Phase 2 Network Failure: {err}")
+            except requests.exceptions.RequestException as err:
+                print(f"❌ Agent Loop Network Failure: {err}")
+                break  # <--- Safety break on network failure
 
     def save_agent_report(self, file_path: str) -> None:
         """Exports the complete agent execution loop to disk as structured JSON."""
-        if not self.execution_history:
-            print("No execution history available to save.")
-            return
 
+        has_assessment = any("agent_assessment" in record for record in self.execution_history)
+
+        if not has_assessment:
+            print("⚠️ No completed agent assessment available to save.")
+            return
+        
         if not file_path.endswith(".json"):
             file_path += ".json"
 
+        # Defensive path safety: create directory if it doesn't exist
         dir_name = os.path.dirname(file_path)
         if dir_name:
             os.makedirs(dir_name, exist_ok=True)
-            
+
         with open(file_path, "w", encoding="utf-8") as file:
             json.dump(self.execution_history, file, indent=4, ensure_ascii=False)
-            print(f"\n Agent execution log saved cleanly to '{file_path}'")
+            print(f"\n💾 Agent execution log saved cleanly to '{file_path}'")
 
 
 if __name__ == "__main__":
